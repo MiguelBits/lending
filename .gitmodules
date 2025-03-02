@@ -10,3 +10,6 @@
 [submodule "lib/uniswap-hooks"]
 	path = lib/uniswap-hooks
 	url = https://github.com/openzeppelin/uniswap-hooks
+[submodule "lib/bold"]
+	path = lib/bold
+	url = https://github.com/liquity/bold
