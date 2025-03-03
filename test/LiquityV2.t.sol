@@ -15,7 +15,7 @@ contract LiquityV2Test is Test {
     // Protocol Constants
     uint256 constant AMOUNT_COLLATERAL = 10 ether;    // 10 wstETH (worth ~29,570 ETH)
     uint256 constant AMOUNT_BOLD = 2500 ether;        // 2000 BOLD (minimum amount)
-    uint256 constant INTEREST_RATE = 5e16;    // 5%
+    uint256 constant INTEREST_RATE = 10e16;    // 10%
     
     // Bold Protocol Addresses
     address constant BOLD_TOKEN = 0xb01dd87B29d187F3E3a4Bf6cdAebfb97F3D9aB98;
@@ -48,9 +48,6 @@ contract LiquityV2Test is Test {
         priceFeed = IPriceFeed(PRICE_FEED);
         borrowerOperations = IBorrowerOperations(BORROWER_OPERATIONS);
         hintHelpers = IHintHelpers(HINT_HELPERS);
-
-        // Setup user with initial balance
-        vm.deal(user, AMOUNT_COLLATERAL);
         
         // Label addresses for better trace output
         vm.label(BOLD_TOKEN, "BOLD");
@@ -71,16 +68,20 @@ contract LiquityV2Test is Test {
         // Get current wstETH price
         (uint256 price,) = priceFeed.fetchPrice();
         console2.log("Current wstETH price: %s", price);
-        /*
+        
         // Get hints for trove insertion
-        (uint256 hintId,,) = hintHelpers.getApproxHint(
+        /*
+        (uint256 hintId, uint256 diff, uint256 latestRandomSeed) = hintHelpers.getApproxHint(
             COLLATERAL_INDEX,
             INTEREST_RATE,
-            50,  // number of trials
-            42   // random seed
+            100,  // number of trials
+            block.timestamp
         );
-        console2.log("Hint ID: %s", hintId);*/
-        
+        console2.log("Hint ID: %s", hintId);
+        console2.log("Diff: %s", diff);
+        console2.log("Latest Random Seed: %s", latestRandomSeed);
+        */
+
         vm.startPrank(user);
             
             // Approve token spending
@@ -173,11 +174,56 @@ contract LiquityV2Test is Test {
         console2.log("BatchSharesRatioTooHigh:", uint32(bytes4(keccak256("BatchSharesRatioTooHigh()"))));
     }
 
-    function test_LeverageZapper() public {
+    function test_LeverageZapper_me() public {
         IZapper zapper = IZapper(0x978D7188ae01881d254Ad7E94874653B0C268004);
         
         user = 0xE419f5c05fd2377F75cdADF87C3529F0C9B59FCb;
         uint256 ethAmount = 2.48797 ether;
+
+        console2.log("User ETH balance before:", user.balance);
+        console2.log("User BOLD balance before:", boldToken.balanceOf(user));
+        
+        IZapper.OpenTroveParams memory params = IZapper.OpenTroveParams({
+            owner: user,
+            ownerIndex: COLLATERAL_INDEX,
+            collAmount: 0,
+            boldAmount: 2000000000000000000000,
+            upperHint: 62386074531969185725078246434344265590408229732709863705962067810072690566538,
+            lowerHint: 42667947703477158473877149252472726582525344946055697950684134446720460075349,
+            annualInterestRate: 100000000000000000,
+            batchManager: address(0),
+            maxUpfrontFee: type(uint256).max,
+            addManager: address(0),
+            removeManager: address(0),
+            receiver: address(0)
+        });
+        
+        vm.startPrank(user);
+            
+            try zapper.openTroveWithRawETH{value: ethAmount}(params) {
+                console2.log("Success!");
+            } catch (bytes memory err) {
+                console2.log("Failed to open trove");
+                console2.log("Error selector (hex):", vm.toString(bytes4(err)));
+                console2.log("Error selector (decimal):", uint32(bytes4(err)));
+                console2.logBytes(err);
+                console2.log("Error length:", err.length);
+            }
+                
+        vm.stopPrank();
+        
+        console2.log("User ETH balance after:", user.balance);
+        console2.log("User BOLD balance after:", boldToken.balanceOf(user));
+        
+        // Verify the transaction worked
+        //assertGt(boldToken.balanceOf(user), 0, "Should have received BOLD tokens");
+    }
+
+    function test_LeverageZapper_alice() public {
+        IZapper zapper = IZapper(0x978D7188ae01881d254Ad7E94874653B0C268004);
+        
+        uint256 ethAmount = 5 ether;
+        vm.deal(user, ethAmount);
 
         console2.log("User ETH balance before:", user.balance);
         console2.log("User BOLD balance before:", boldToken.balanceOf(user));
