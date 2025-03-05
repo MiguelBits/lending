@@ -35,6 +35,15 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
     // Token variables
     PoolPartyToken public poolPartyToken;
     uint256 public tokenBurnAmount;
+    PoolPartyToken public boldToken;
+    
+    // Donation bonus variables
+    uint256 public tier1BonusPercent = 1; // 1% bonus for 10+ BOLD
+    uint256 public tier2BonusPercent = 5; // 5% bonus for 100+ BOLD
+    uint256 public tier3BonusPercent = 10; // 10% bonus for 1000+ BOLD
+    uint256 public tier1Amount = 10e18; // 10 BOLD threshold
+    uint256 public tier2Amount = 100e18; // 100 BOLD threshold
+    uint256 public tier3Amount = 1000e18; // 1000 BOLD threshold
     
     // Game state variables
     mapping(address => bool) public hasFreeSpinAvailable;
@@ -57,6 +66,13 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
     }
 
     PrizeConfig[] public prizes;
+
+    address public hooker;
+
+    modifier onlyHooker() {
+        require(msg.sender == hooker, "Only hookers can call this function");
+        _;
+    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -115,6 +131,10 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
      * @dev Function that authorizes upgrades, only owner can upgrade
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function setHooker(address _hooker) public onlyOwner {
+        hooker = _hooker;
+    }
     
     /**
      * @dev Add a prize combination
@@ -156,6 +176,61 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
     }
 
     /**
+     * @dev Set bonus percentages for donations
+     */
+    function setDonationBonusPercentages(
+        uint256 _tier1BonusPercent,
+        uint256 _tier2BonusPercent, 
+        uint256 _tier3BonusPercent
+    ) external onlyOwner {
+        require(1 ether <= _tier1BonusPercent && _tier1BonusPercent < 100 ether, "Tier 1 bonus percent must be less than or equal to 100");
+        require(1 ether <= _tier2BonusPercent && _tier2BonusPercent < 100 ether, "Tier 2 bonus percent must be less than or equal to 100");
+        require(1 ether <= _tier3BonusPercent && _tier3BonusPercent < 100 ether, "Tier 3 bonus percent must be less than or equal to 100");
+        tier1BonusPercent = _tier1BonusPercent;
+        tier2BonusPercent = _tier2BonusPercent;
+        tier3BonusPercent = _tier3BonusPercent;
+    }
+    
+    /**
+     * @dev Set donation tier thresholds
+     */
+    function setDonationTierAmounts(
+        uint256 _tier1Amount,
+        uint256 _tier2Amount,
+        uint256 _tier3Amount
+    ) external onlyOwner {
+        tier1Amount = _tier1Amount;
+        tier2Amount = _tier2Amount;
+        tier3Amount = _tier3Amount;
+    }
+
+    function donate(uint256 amount, uint256 baseRate) external onlyHooker {
+        boldToken.transferFrom(tx.origin, address(this), amount);
+
+        //calculate the amount of tokens to mint
+        uint256 amountWorth = amount * baseRate;
+
+        //add bonus for larger donations using Solidity best practices
+        uint256 bonusAmount;
+        if (amount >= tier3Amount) {
+            // Calculate bonus: (amountWorth * tier3BonusPercent) / 100
+            bonusAmount = (amountWorth * tier3BonusPercent) / 100 ether;
+        } else if (amount >= tier2Amount) {
+            bonusAmount = (amountWorth * tier2BonusPercent) / 100 ether;
+        } else if (amount >= tier1Amount) {
+            bonusAmount = (amountWorth * tier1BonusPercent) / 100 ether;
+        }
+        
+        // Add bonus to the total amount
+        if (bonusAmount > 0) {
+            amountWorth += bonusAmount;
+        }
+
+        //mint tokens to the player
+        poolPartyToken.mint(tx.origin, amountWorth);
+    }
+
+    /**
      * @dev Initiates a play of the slot machine using IERC20
      * Burns tokens from player balance and requests random numbers
      * 
@@ -167,22 +242,22 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
      */
     function playSlot() public returns (uint256 requestId) {
         // Mark player's results as not ready yet
-        playerResultsReady[msg.sender] = false;
+        playerResultsReady[tx.origin] = false;
         
         // Check if player has a free spin
-        if (!hasFreeSpinAvailable[msg.sender]) {
+        if (!hasFreeSpinAvailable[tx.origin]) {
             // Verify player has approved the token transfer
             require(
-                poolPartyToken.allowance(msg.sender, address(this)) >= tokenBurnAmount,
+                poolPartyToken.allowance(tx.origin, address(this)) >= tokenBurnAmount,
                 "Insufficient token allowance"
             ); 
             
             // Burn the tokens using the burn function
-            poolPartyToken.burn(msg.sender, tokenBurnAmount);
+            poolPartyToken.burn(tx.origin, tokenBurnAmount);
 
         } else {
             // Use the free spin
-            hasFreeSpinAvailable[msg.sender] = false;
+            hasFreeSpinAvailable[tx.origin] = false;
         }
     
         // Request randomness from Chainlink VRF (3 random numbers)
@@ -198,8 +273,8 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
         );
 
 
-        requestIdToPlayer[requestId] = msg.sender;
-        emit SpinRequested(msg.sender, requestId);
+        requestIdToPlayer[requestId] = tx.origin;
+        emit SpinRequested(tx.origin, requestId);
         
         return requestId;
     }
@@ -240,15 +315,14 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
                 } else {
                     winAmount = tokenBurnAmount * prizes[i].multiplier;
                     
-                    // Mint tokens as prize
+                    // transfer eth tokens as prize
                     if (winAmount > 0) {
-                        // Try to mint tokens to the player
-                        try poolPartyToken.mint(player, winAmount) {
-                            emit PrizeAwarded(player, winAmount);
-                        } catch {
-                            // If minting fails (this contract isn't authorized as a hooker),
-                            // we still emit the event but no tokens are minted
-                            emit PrizeAwarded(player, winAmount);
+                        //check if win amount is smaller than boldToken balance in this contract
+                        if (boldToken.balanceOf(address(this)) >= winAmount) {
+                            boldToken.transfer(player, winAmount);
+                        } else {
+                            //if not, transfer only the available balance
+                            boldToken.transfer(player, boldToken.balanceOf(address(this)));
                         }
                     }
                 }

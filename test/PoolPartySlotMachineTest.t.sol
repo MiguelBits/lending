@@ -76,6 +76,7 @@ contract SlotMachineTest is Test {
             );
 
             slotMachine = SlotMachine(payable(slotMachine_proxy));
+            slotMachine.setHooker(deployer);
             
             // Add slot machine as consumer to VRF subscription
             vrfCoordinator.addConsumer(subscriptionId, address(slotMachine));
