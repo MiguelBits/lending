@@ -215,8 +215,11 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
         // Map each random word to its respective slot range
         uint256[NUM_SLOTS] memory results;
         results[0] = randomWords[0] % (SLOT_A_MAX_VALUE + 1); // Slot A: 0-11
+        //console2.log("randomWords[0]", randomWords[0]);
         results[1] = randomWords[1] % (SLOT_B_MAX_VALUE + 1); // Slot B: 0-12
+        //console2.log("randomWords[1]", randomWords[1]);
         results[2] = randomWords[2] % (SLOT_C_MAX_VALUE + 1); // Slot C: 0-13
+        //console2.log("randomWords[2]", randomWords[2]);
         
         // Record player's results
         playerLastResults[player] = results;

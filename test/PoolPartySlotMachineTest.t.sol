@@ -127,12 +127,73 @@ contract SlotMachineTest is Test {
 
         vrfCoordinator.fulfillRandomWords(requestId, address(slotMachine));
 
-        //TODO : fulfillRandomWordsWithOverride allows the user to pass in their own random words.
-
         //show slot results
         (uint256[NUM_SLOTS] memory results, bool ready) = slotMachine.getSlotResults(player);
         console2.log("Slot results:", results[0], results[1], results[2]);
         console2.log("Slot results ready:", ready);
     }
+
+    function testJackpot777() public {
+        // Create a test mock for VRF fulfillment that will produce 7-7-7
+        uint256[] memory rigged = new uint256[](3);
+        
+        // Formula: For any value % x to equal y, use (x*k + y) where k is any non-negative integer
+        rigged[0] = 12 * 1000 + 7;  // Will give 7 when % 12
+        rigged[1] = 13 * 1000 + 7;  // Will give 7 when % 13
+        rigged[2] = 14 * 1000 + 7;  // Will give 7 when % 14
     
+        //log player tokens
+        console2.log("Player tokens:", token.balanceOf(player));
+        console2.log("Slot machine tokens:", token.balanceOf(address(slotMachine)));
+        vm.startPrank(player);
+            
+            // Approve tokens for burning
+            token.approve(address(slotMachine), tokenBurnAmount);
+            
+            // Initial balance
+            uint256 initialBalance = token.balanceOf(player);
+            
+            // Play the slot
+            uint256 requestId = slotMachine.playSlot();
+            console2.log("Request Game ID:", requestId);
+            // Check if tokens were burned
+            assertEq(token.balanceOf(player), initialBalance - tokenBurnAmount, "Tokens should be burned");
+            
+        vm.stopPrank();
+
+        vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(slotMachine), rigged);
+
+        //show slot results
+        (uint256[NUM_SLOTS] memory results, bool ready) = slotMachine.getSlotResults(player);
+        console2.log("Slot results:", results[0], results[1], results[2]);
+        console2.log("Slot results ready:", ready);
+
+        //check if the player has a free spin
+        assertEq(slotMachine.checkFreeSpin(player), true, "Player should have a free spin");
+
+        vm.startPrank(player);
+            
+            // Play the slot
+            requestId = slotMachine.playSlot();
+            console2.log("Request Game ID:", requestId);
+            // Check if tokens were burned
+            assertEq(token.balanceOf(player), initialBalance - tokenBurnAmount, "Tokens should not be burned");
+            
+        vm.stopPrank();
+
+        rigged[0] = 12 * 1000 + 4;  // Will give 4 when % 12
+        rigged[1] = 13 * 1000 + 2;  // Will give 2 when % 13
+        rigged[2] = 14 * 1000 + 0;  // Will give 0 when % 14
+
+        vrfCoordinator.fulfillRandomWordsWithOverride(requestId, address(slotMachine), rigged);
+
+        //show slot results
+        (results, ready) = slotMachine.getSlotResults(player);
+        console2.log("Slot results:", results[0], results[1], results[2]);
+        console2.log("Slot results ready:", ready);
+
+        //check if the player does not have a free spin
+        assertEq(slotMachine.checkFreeSpin(player), false, "Player should not have a free spin");
+
+    }
 } 
