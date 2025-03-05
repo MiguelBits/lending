@@ -3,9 +3,13 @@ src = "src"
 out = "out"
 libs = ["lib"]
 ffi = true
-fs_permissions = [{ access = "read-write", path = ".forge-snapshots/"}]
+fs_permissions = [{ access = "read-write", path = "./"}]
+
 auto-detect-solc=true
 evm_version = "cancun"
-
+ast = true
+build_info = true
+extra_output = ["storageLayout"]
+unchecked_cheatcode_artifacts = true
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

@@ -59,6 +59,56 @@ See [script/](script/) for hook deployment, pool creation, liquidity provision, 
 
 ---
 
+## Upgradeability and Contract Safety
+
+This project uses the OpenZeppelin Upgrades library with Foundry to enable upgradeable contracts. The `PoolPartySlotMachine` contract is implemented as a UUPS (Universal Upgradeable Proxy Standard) upgradeable contract.
+
+### Setting Up Upgrade Safety Validations
+
+To ensure your upgradeable contracts are safely deployed and upgraded, follow these steps:
+
+1. **Install Node.js**
+   - Required for the OpenZeppelin Upgrades library
+
+2. **Configure your `foundry.toml`**
+   - Add the following settings to enable upgrade safety validations:
+   ```toml
+   [profile.default]
+   ffi = true
+   ast = true
+   build_info = true
+   extra_output = ["storageLayout"]
+   ```
+
+3. **For Contract Upgrades**
+   - When upgrading a contract from a previous version, add the `@custom:oz-upgrades-from <reference>` annotation to the new contract version, or
+   - Specify the `referenceContract` option when calling the library's functions
+
+4. **Clean Build Before Testing/Deploying**
+   - Run `forge clean` before running your Foundry script or tests, or
+   - Include the `--force` option when running `forge script` or `forge test`
+
+### Skipping Safety Validations (Not Recommended)
+
+If you need to skip upgrade safety validations (use only as a last resort):
+- Use the `unsafeSkipAllChecks` option when calling the Upgrades library's functions, or
+- Use the `UnsafeUpgrades` library instead
+
+⚠️ **Warning**: Skipping safety validations is dangerous and should only be used in emergency situations.
+
+### File System Permissions
+
+For the Upgrades plugin to work correctly with Foundry, you need to set appropriate file system permissions. Add the following to your `foundry.toml`:
+
+```toml
+fs_permissions = [
+    { access = "read-write", path = ".forge-snapshots/"},
+    { access = "read", path = "out/"}
+]
+```
+
+This allows the Upgrades plugin to read the compiled contract artifacts.
+
 <details>
 <summary><h2>Troubleshooting</h2></summary>
 

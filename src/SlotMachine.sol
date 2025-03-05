@@ -1,27 +1,29 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity >=0.6.2 <0.9.0;
 
-import "@chainlink/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/vrf/VRFConsumerBaseV2.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "./PoolPartyToken.sol";
+import {VRFCoordinatorV2_5, VRFV2PlusClient} from "@chainlink/dev/vrf/VRFCoordinatorV2_5.sol";
+
+import "forge-std/console2.sol";
 
 /**
  * @title PoolPartySlotMachine
  * @dev A slot machine game that uses Chainlink VRF for random number generation
  * Each play burns a specified amount of IERC20
  * This contract is upgradeable using the UUPS proxy pattern
+ *
  */
-contract PoolPartySlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UUPSUpgradeable {
+contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UUPSUpgradeable {
     // Chainlink VRF variables
-    VRFCoordinatorV2Interface private i_vrfCoordinator;
+    VRFCoordinatorV2_5 private plus_vrfCoordinator;
     bytes32 private i_gasLane;
-    uint64 private i_subscriptionId;
+    uint256 private i_subscriptionId;
     uint32 private i_callbackGasLimit;
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
-    uint32 private constant NUM_WORDS = 3; // Request 3 random words for 3 slots
 
     // Slot machine variables
     uint256 private constant NUM_SLOTS = 3;
@@ -57,7 +59,7 @@ contract PoolPartySlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgrad
     PrizeConfig[] public prizes;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() VRFConsumerBaseV2(address(0)) {
+    constructor() {
         _disableInitializers();
     }
 
@@ -67,7 +69,7 @@ contract PoolPartySlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgrad
     function initialize(
         address vrfCoordinatorV2,
         bytes32 gasLane,
-        uint64 subscriptionId,
+        uint256 subscriptionId,
         uint32 callbackGasLimit,
         address _poolPartyToken,
         uint256 _tokenBurnAmount,
@@ -75,9 +77,10 @@ contract PoolPartySlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgrad
     ) public initializer {
         __Ownable_init(initialOwner);
         __UUPSUpgradeable_init();
-        
-        // Initialize VRF consumer
-        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+        //@custom:oz-upgrades-unsafe-allow state-variable-immutable vrfCoordinator
+        setVrfCoordinator(vrfCoordinatorV2);
+        plus_vrfCoordinator = VRFCoordinatorV2_5(vrfCoordinatorV2);
+
         i_gasLane = gasLane;
         i_subscriptionId = subscriptionId;
         i_callbackGasLimit = callbackGasLimit;
@@ -175,21 +178,26 @@ contract PoolPartySlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgrad
             ); 
             
             // Burn the tokens using the burn function
-            poolPartyToken.burn(address(this), tokenBurnAmount);
+            poolPartyToken.burn(msg.sender, tokenBurnAmount);
+
         } else {
             // Use the free spin
             hasFreeSpinAvailable[msg.sender] = false;
         }
-        
+    
         // Request randomness from Chainlink VRF (3 random numbers)
-        requestId = i_vrfCoordinator.requestRandomWords(
-            i_gasLane,
-            i_subscriptionId,
-            REQUEST_CONFIRMATIONS,
-            i_callbackGasLimit,
-            NUM_WORDS
+        requestId = plus_vrfCoordinator.requestRandomWords(
+            VRFV2PlusClient.RandomWordsRequest({
+                keyHash: i_gasLane,
+                subId: i_subscriptionId,
+                requestConfirmations: 5,
+                callbackGasLimit: i_callbackGasLimit,
+                numWords: uint32(NUM_SLOTS),
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: true})) // new parameter
+            })
         );
-        
+
+
         requestIdToPlayer[requestId] = msg.sender;
         emit SpinRequested(msg.sender, requestId);
         
@@ -212,7 +220,7 @@ contract PoolPartySlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgrad
         
         // Record player's results
         playerLastResults[player] = results;
-        playerResultsReady[msg.sender] = true;
+        playerResultsReady[player] = true;
         
         // Check for wins
         uint256 winAmount = 0;
@@ -268,6 +276,17 @@ contract PoolPartySlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgrad
      */
     function getPlayerLastResults(address player) external view returns (uint256[NUM_SLOTS] memory) {
         return playerLastResults[player];
+    }
+    
+    /**
+     * @dev Get the results of a player's last slot play along with status
+     * @notice Results are only available after the Chainlink VRF callback has executed
+     * @param player The address of the player
+     * @return results Array of 3 uint256 representing the slot results
+     * @return ready Boolean indicating if results are ready
+     */
+    function getSlotResults(address player) external view returns (uint256[NUM_SLOTS] memory results, bool ready) {
+        return (playerLastResults[player], playerResultsReady[player]);
     }
     
     /**
