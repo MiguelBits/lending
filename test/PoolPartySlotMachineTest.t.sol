@@ -60,7 +60,6 @@ contract SlotMachineTest is Test {
             
             // Create subscription for VRF
             subscriptionId = vrfCoordinator.createSubscription();
-            console2.log("VRF subscription id", subscriptionId);
 
             // Deploy the slot machine implementation using UUPS proxy
             slotMachine_proxy = Upgrades.deployUUPSProxy(
@@ -85,7 +84,7 @@ contract SlotMachineTest is Test {
             vrfCoordinator.fundSubscription(subscriptionId, 100 ether);
 
             //check if the subscription is funded
-            console2.log("VRFsubscription id", subscriptionId);
+            console2.log("VRF subscription id", subscriptionId);
             (uint96 balance, uint96 nativeBalance, uint64 reqCount, address owner, ) = vrfCoordinator.getSubscription(subscriptionId);
             console2.log("VRF balance", balance);
             console2.log("VRF nativeBalance", nativeBalance);
@@ -124,12 +123,16 @@ contract SlotMachineTest is Test {
             // Check if tokens were burned
             assertEq(token.balanceOf(player), initialBalance - tokenBurnAmount, "Tokens should be burned");
             
-            vrfCoordinator.fulfillRandomWords(subscriptionId, address(slotMachine));
-
         vm.stopPrank();
 
-        
+        vrfCoordinator.fulfillRandomWords(requestId, address(slotMachine));
+
         //TODO : fulfillRandomWordsWithOverride allows the user to pass in their own random words.
+
+        //show slot results
+        (uint256[NUM_SLOTS] memory results, bool ready) = slotMachine.getSlotResults(player);
+        console2.log("Slot results:", results[0], results[1], results[2]);
+        console2.log("Slot results ready:", ready);
     }
     
 } 

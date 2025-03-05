@@ -193,7 +193,7 @@ contract SlotMachine is Initializable, VRFConsumerBaseV2, OwnableUpgradeable, UU
                 requestConfirmations: 5,
                 callbackGasLimit: i_callbackGasLimit,
                 numWords: uint32(NUM_SLOTS),
-                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: true})) // new parameter
+                extraArgs: VRFV2PlusClient._argsToBytes(VRFV2PlusClient.ExtraArgsV1({nativePayment: false})) // new parameter
             })
         );
 
