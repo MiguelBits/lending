@@ -9,40 +9,33 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-interface ISlotMachine {
-    function donate(uint256 amount) external;
-}
-
-contract PartyHook is BaseHook {
+contract Bribes is BaseHook {
     using PoolIdLibrary for PoolKey;
 
-    error AddLiquidityThroughHook();
-    error RemoveLiquidityThroughHook();
-    struct CallbackData {
-        uint256 amountEth;
-        address sender;
-    }
+    // NOTE: ---------------------------------------------------------
+    // state variables should typically be unique to a pool
+    // a single hook contract should be able to service multiple pools
+    // ---------------------------------------------------------------
 
-    address public ethToken; // this token is not currency0 or currency1
-    ISlotMachine public slotMachine;
+    mapping(PoolId => uint256 count) public beforeSwapCount;
+    mapping(PoolId => uint256 count) public afterSwapCount;
 
-    constructor(IPoolManager _poolManager, address _ethToken, ISlotMachine _slotMachine) BaseHook(_poolManager) {
-        ethToken = _ethToken;
-        slotMachine = _slotMachine;
-    }
+    mapping(PoolId => uint256 count) public beforeAddLiquidityCount;
+    mapping(PoolId => uint256 count) public beforeRemoveLiquidityCount;
+
+    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: false,
-            beforeAddLiquidity: false,
+            beforeAddLiquidity: true,
             afterAddLiquidity: false,
-            beforeRemoveLiquidity: false,
+            beforeRemoveLiquidity: true,
             afterRemoveLiquidity: false,
             beforeSwap: true,
-            afterSwap: false,
+            afterSwap: true,
             beforeDonate: false,
             afterDonate: false,
             beforeSwapReturnDelta: false,
@@ -52,35 +45,16 @@ contract PartyHook is BaseHook {
         });
     }
 
-    // Custom add liquidity function, only deposit eth
-    function addLeverageToken(uint256 amount) external {
-        IERC20(ethToken).transferFrom(tx.origin, address(this), amount);
-        //TODO:open trove
-    }
-
-    function withdrawLeverageToken(uint256 amount) external {
-        IERC20(ethToken).transfer(tx.origin, amount);
-        //TODO: close trove
-    }
     // -----------------------------------------------
     // NOTE: see IHooks.sol for function documentation
     // -----------------------------------------------
 
-    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata swap, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata key, IPoolManager.SwapParams calldata, bytes calldata)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        //TODO:
-
-        //if poolparty token for bold, play slot machine
-        //if bold token for poolparty, donate to slot machine
-        if (swap.zeroForOne) {
-            //TODO: 
-        } else {
-            //TODO:
-        }
-
+        beforeSwapCount[key.toId()]++;
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -89,7 +63,27 @@ contract PartyHook is BaseHook {
         override
         returns (bytes4, int128)
     {
-        //TODO:
+        afterSwapCount[key.toId()]++;
         return (BaseHook.afterSwap.selector, 0);
+    }
+
+    function _beforeAddLiquidity(
+        address,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) internal override returns (bytes4) {
+        beforeAddLiquidityCount[key.toId()]++;
+        return BaseHook.beforeAddLiquidity.selector;
+    }
+
+    function _beforeRemoveLiquidity(
+        address,
+        PoolKey calldata key,
+        IPoolManager.ModifyLiquidityParams calldata,
+        bytes calldata
+    ) internal override returns (bytes4) {
+        beforeRemoveLiquidityCount[key.toId()]++;
+        return BaseHook.beforeRemoveLiquidity.selector;
     }
 }
